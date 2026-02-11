@@ -1,0 +1,32 @@
+services:
+  chat-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chat_server
+    deploy:
+      resources:
+        limits:
+          memory: 512M  # JVM will automatically set Heap to ~384MB (75%)
+    environment:
+      - JWT_SECRET=YcOJEt8VXiRGBL724eFS6Ksq0n3jlwWh
+    networks:
+      - chat_net
+    restart: unless-stopped
+    # Internal port 8080. Host port 8080 for local testing.
+    ports:
+      - "8080:8080"
+
+  cloudflared:
+    image: docker.io/cloudflare/cloudflared:latest
+    container_name: chat_cloudflared
+    networks:
+      - chat_net
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token eyJhIjoiMzk4NzdjOTkwZmJiMTk3YWMyNjM0ZGFjM2ZmNjI4MjYiLCJ0IjoiYzJiOTk2MWYtMzQxMy00NjA3LThiYzAtMWExOTM4YzNlMzdjIiwicyI6IlpHUXhORGxtWkdFdE1XWTNZUzAwTkRVeUxUa3pNekl0TXpZek1qUmpPVGMyT0dNMyJ9
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiMzk4NzdjOTkwZmJiMTk3YWMyNjM0ZGFjM2ZmNjI4MjYiLCJ0IjoiYzJiOTk2MWYtMzQxMy00NjA3LThiYzAtMWExOTM4YzNlMzdjIiwicyI6IlpHUXhORGxtWkdFdE1XWTNZUzAwTkRVeUxUa3pNekl0TXpZek1qUmpPVGMyT0dNMyJ9
+
+networks:
+  chat_net:
+    driver: bridge
