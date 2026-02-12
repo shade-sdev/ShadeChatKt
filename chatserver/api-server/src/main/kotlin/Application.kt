@@ -11,9 +11,9 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.engine.*
 import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
+import io.ktor.server.plugins.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
-import io.ktor.server.plugins.origin
 import io.ktor.server.plugins.ratelimit.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -33,6 +33,7 @@ import service.DMService
 import service.GroupService
 import service.MessageService
 import service.UserService
+import util.log
 import websocket.WebSocketConnectionManager
 import java.util.*
 import kotlin.time.Duration.Companion.minutes
@@ -76,8 +77,8 @@ suspend fun Application.configureApp() {
             delay(30_000)
             try {
                 connectionRegistry.heartbeat()
-            } catch (_: Exception) {
-                println("⚠️ Heartbeat error")
+            } catch (ex: Exception) {
+                log().error(ex) { "Heartbeat error" }
             }
         }
     }
@@ -108,17 +109,13 @@ suspend fun Application.configureApp() {
     }
 
     install(RateLimit) {
-        // 1. "Write" Limits: Strict, per-user or per-IP
         register(RateLimitName("write")) {
             rateLimiter(limit = 60, refillPeriod = 1.minutes)
 
-            // Identify the client (Enterprise must-have)
             requestKey { call ->
-                // Try to limit by User ID first, fallback to IP
                 call.principal<UserPrincipal>()?.user?.id ?: call.request.origin.remoteAddress
             }
 
-            // Custom behavior when limit is exceeded
             modifyResponse { call, state ->
                 when (state) {
                     is RateLimiter.State.Available -> {
@@ -126,23 +123,21 @@ suspend fun Application.configureApp() {
                         call.response.headers.append("X-RateLimit-Remaining", state.remainingTokens.toString())
                         call.response.headers.append("X-RateLimit-Reset", (state.refillAtTimeMillis / 1000).toString())
                     }
+
                     is RateLimiter.State.Exhausted -> {
                         val retryAfterSeconds = state.toWait.inWholeSeconds
                         call.response.headers.append("Retry-After", retryAfterSeconds.toString())
-                        println("Rate limit exhausted for ${call.request.origin.remoteAddress}. Retry in ${retryAfterSeconds}s")
-
+                        log().info { "Rate limit exhausted for ${call.request.origin.remoteAddress}. Retry in ${retryAfterSeconds}s" }
                     }
                 }
             }
         }
 
-        // 2. "Auth" Limits: Very strict to prevent Brute Force
         register(RateLimitName("auth")) {
             rateLimiter(limit = 5, refillPeriod = 30.seconds)
             requestKey { call -> call.request.origin.remoteAddress }
         }
 
-        // 3. Global Fallback: Protection against scraping/DDoS
         global {
             rateLimiter(limit = 500, refillPeriod = 1.minutes)
             requestKey { call -> call.request.origin.remoteAddress }
@@ -184,15 +179,14 @@ suspend fun Application.configureApp() {
     // 6. Lifecycle Management (Updated for Ktor 3)
     monitor.subscribe(ApplicationStopped) {
         heartbeatJob.cancel()
-        println("🛑 Server $serverId stopped.")
+        log().info { "Server $serverId stopped." }
     }
 
-    println("✅ API Server $serverId ready on port 8080")
+    log().info { "API Server $serverId ready on port ${engine.environment.config.port}" }
 }
 
 private suspend fun initTestData(userRepository: UserRepository, dmRepository: DMRepository) {
     if (userRepository.findAll().isEmpty()) {
-        println("📝 Creating test users...")
 
         val userIdAlice = UUID.randomUUID().toString()
         val userIdBob = UUID.randomUUID().toString()
@@ -223,8 +217,7 @@ private suspend fun initTestData(userRepository: UserRepository, dmRepository: D
             participant2Id = userIdBob,
             createdAt = kotlin.time.Clock.System.now()
         )
-        dmRepository.save(dm)
 
-        println("✅ Test users created: alice/password, bob/password")
+        dmRepository.save(dm)
     }
 }

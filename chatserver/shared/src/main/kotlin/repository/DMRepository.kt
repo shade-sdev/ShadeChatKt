@@ -19,7 +19,6 @@ class DMRepository {
         val p1 = UUID.fromString(dm.participant1Id)
         val p2 = UUID.fromString(dm.participant2Id)
 
-        // store canonical ordering so uniqueness works
         val (a, b) = if (p1.toString() < p2.toString()) p1 to p2 else p2 to p1
 
         DmConversationsTable.insert {

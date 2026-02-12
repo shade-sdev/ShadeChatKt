@@ -22,9 +22,6 @@ fun Route.userRoutes(userService: UserService) {
             }
 
             get("/all") {
-                val user = call.principal<UserPrincipal>()?.user
-                    ?: return@get call.respond(HttpStatusCode.Unauthorized)
-
                 val allUsers = userService.getAllUsers()
                 call.respond(allUsers.map { userService.toResponse(it) })
             }

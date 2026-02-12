@@ -10,7 +10,6 @@ object DatabaseFactory {
     fun init(runMigrations: Boolean = true) {
         val dataSource = hikari()
 
-        // 1) Run Flyway migrations first
         if (runMigrations) {
             Flyway.configure()
                 .dataSource(dataSource)
@@ -20,7 +19,6 @@ object DatabaseFactory {
                 .migrate()
         }
 
-        // 2) Connect Exposed
         Database.connect(dataSource)
     }
 

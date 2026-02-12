@@ -15,6 +15,7 @@ import repository.GroupRepository
 import repository.MessageRepository
 import repository.UserRepository
 import dto.*
+import util.log
 import kotlin.time.Clock
 import java.util.*
 import java.util.Base64
@@ -60,11 +61,12 @@ class UserService(
     }
 
     suspend fun updateStatus(userId: String, status: UserStatus) {
-        println("📝 Updating status for user $userId to $status")
+        log().info {"Updating status for user $userId to $status"}
         userRepository.update(userId) { it.copy(status = status) }
 
         val statusUpdate = UserStatusUpdate(userId, status)
-        println("📡 Broadcasting status update via Redis")
+        log().info {"Broadcasting status update via Redis"}
+
         messageBus.publishBroadcast(statusUpdate)
     }
 

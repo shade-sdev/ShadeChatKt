@@ -75,7 +75,6 @@ class GroupRepository {
             it[description] = updated.description
         }
 
-        // replace members (simple + safe)
         GroupMembersTable.deleteWhere { GroupMembersTable.groupId eq UUID.fromString(id) }
 
         updated.memberIds.forEach { memberId ->

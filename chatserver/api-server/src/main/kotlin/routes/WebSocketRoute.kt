@@ -3,6 +3,8 @@ package routes
 import auth.JWTConfig
 import dto.TypingIndicator
 import dto.WSMessage
+import io.github.oshai.kotlinlogging.KotlinLogging
+import io.github.oshai.kotlinlogging.slf4j.logger
 import io.ktor.server.application.*
 import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
@@ -18,6 +20,8 @@ import repository.DMRepository
 import repository.GroupRepository
 import service.UserService
 import websocket.WebSocketConnectionManager
+import util.log
+import kotlin.jvm.java
 
 /**
  * A plugin to echo the WebSocket sub-protocol header.
@@ -67,12 +71,12 @@ fun Route.websocketRoute(
             connectionRegistry.registerOnline(userId)
             userService.updateStatus(userId, UserStatus.ONLINE)
 
-            println("✅ User $userId connected via WebSocket")
+            log().info { "User $userId connected via WebSocket" }
 
             // Deliver pending messages
             val pendingMessages = messageQueue.getPendingMessages(userId)
             if (pendingMessages.isNotEmpty()) {
-                println("📬 Delivering ${pendingMessages.size} pending messages to $userId")
+                log().info { "Delivering ${pendingMessages.size} pending messages to $userId"}
                 pendingMessages.forEach { notification ->
                     val wsMessage = WSMessage("new_message", Json.encodeToString(notification))
                     val json = Json.encodeToString(wsMessage)
@@ -87,7 +91,7 @@ fun Route.websocketRoute(
                 }
             }
         } catch (e: Exception) {
-            println("❌ WebSocket error for user $userId: ${e.message}")
+            log().error(e) { "WebSocket error for user $userId: ${e.message}" }
             e.printStackTrace()
         } finally {
             if (userId != null) {
@@ -95,7 +99,8 @@ fun Route.websocketRoute(
                 messageBus.unsubscribeFromUser(userId)
                 connectionRegistry.registerOffline(userId)
                 userService.updateStatus(userId, UserStatus.OFFLINE)
-                println("👋 User $userId disconnected from WebSocket")
+
+                log().info { "User $userId disconnected from WebSocket" }
             }
         }
     }
@@ -147,7 +152,7 @@ private suspend fun handleWebSocketMessage(
             }
         }
     } catch (e: Exception) {
-        println("❌ Error handling WebSocket message: ${e.message}")
+        KotlinLogging.logger("WebSocketRoute.kt").info { "❌ Error handling WebSocket message: ${e.message}" }
     }
 
 }

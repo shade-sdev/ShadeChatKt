@@ -3,11 +3,11 @@ package websocket
 import dto.WSMessage
 import io.ktor.websocket.*
 import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.util.concurrent.ConcurrentHashMap
 import redis.LocalMessageDelivery
 import repository.GroupRepository
+import util.log
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Manages WebSocket connections on THIS server
@@ -23,12 +23,12 @@ class WebSocketConnectionManager : LocalMessageDelivery {
 
     fun addConnection(userId: String, session: DefaultWebSocketSession) {
         connections[userId] = session
-        println("👤 User $userId connected locally. Total: ${connections.size}")
+        log().info { "User $userId connected locally. Total: ${connections.size}" }
     }
 
     fun removeConnection(userId: String) {
         connections.remove(userId)
-        println("👋 User $userId disconnected locally. Total: ${connections.size}")
+        log().info { "User $userId disconnected locally. Total: ${connections.size}" }
     }
 
     fun getConnection(userId: String): DefaultWebSocketSession? {
@@ -50,9 +50,9 @@ class WebSocketConnectionManager : LocalMessageDelivery {
             try {
                 val json = Json.encodeToString(message)
                 session.send(Frame.Text(json))
-                println("📨 Delivered to user $userId locally")
+                log().info { "📨 Delivered to user $userId locally" }
             } catch (e: Exception) {
-                println("❌ Error delivering to user $userId: ${e.message}")
+                log().error(e) { "Error during deliver to user $userId" }
             }
         }
     }
@@ -65,11 +65,12 @@ class WebSocketConnectionManager : LocalMessageDelivery {
                 try {
                     session.send(Frame.Text(json))
                 } catch (e: Exception) {
-                    println("❌ Error broadcasting: ${e.message}")
+                    log().error(e) { "Error broadcasting: ${e.message}" }
                 }
             }
         }
-        println("📡 Broadcast to ${connections.size} local users")
+
+        log().info { "Broadcast to ${connections.size} local users" }
     }
 
     @OptIn(DelicateCoroutinesApi::class)
@@ -84,7 +85,7 @@ class WebSocketConnectionManager : LocalMessageDelivery {
                 try {
                     session.send(Frame.Text(json))
                 } catch (e: Exception) {
-                    println("❌ Error delivering to group member $userId: ${e.message}")
+                    log().error(e) { "Error delivering to group member $userId: ${e.message}" }
                 }
             }
         }

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import util.log
 
 /**
  * Queue for offline message delivery
@@ -31,8 +32,7 @@ class MessageQueue(redisUrl: String) {
 
         connection.async().lpush(key, json).get()
         connection.async().expire(key, 604800).get() // 7 days
-
-        println("📮 Queued message for offline user: $userId")
+        log().info { "Queued message for offline user: $userId" }
     }
 
     /**
@@ -45,13 +45,13 @@ class MessageQueue(redisUrl: String) {
 
         connection.async().del(key).get()
 
-        println("📬 Retrieved ${messages.size} pending messages for user: $userId")
+        log().info { "Retrieved ${messages.size} pending messages for user: $userId" }
 
         return@withContext messages.mapNotNull { json ->
             try {
                 Json.decodeFromString<NewMessageNotification>(json)
             } catch (e: Exception) {
-                println("⚠️ Failed to parse pending message: ${e.message}")
+                log().error(e) { "⚠️ Failed to parse pending message: ${e.message}"}
                 null
             }
         }

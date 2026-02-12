@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import util.log
 
 /**
  * Redis Pub/Sub for real-time message distribution
@@ -30,7 +31,7 @@ class RedisMessageBus(
         })
 
         subConnection.async().subscribe("broadcast")
-        println("🔔 Subscribed to Redis broadcast channel")
+        log().info { "Subscribed to Redis broadcast channel" }
     }
 
     private fun handleIncomingMessage(channel: String, message: String) {
@@ -53,7 +54,7 @@ class RedisMessageBus(
                     }
                 }
             } catch (e: Exception) {
-                println("❌ Error handling Redis message: ${e.message}")
+                log().error(e) {"Error handling Redis message: ${e.message}"}
             }
         }
     }
@@ -63,7 +64,7 @@ class RedisMessageBus(
         val json = Json.encodeToString(wsMessage)
 
         pubConnection.async().publish("user:$userId", json)
-        println("📤 Published to Redis - user:$userId")
+        log().info {"Published to Redis - user:$userId"}
     }
 
     suspend fun publishToGroup(groupId: String, message: Any) {
@@ -71,7 +72,7 @@ class RedisMessageBus(
         val json = Json.encodeToString(wsMessage)
 
         pubConnection.async().publish("group:$groupId", json)
-        println("📤 Published to Redis - group:$groupId")
+        log().info {"Published to Redis - group:$groupId"}
     }
 
     suspend fun publishBroadcast(message: Any) {
@@ -79,27 +80,27 @@ class RedisMessageBus(
         val json = Json.encodeToString(wsMessage)
 
         pubConnection.async().publish("broadcast", json)
-        println("📤 Published to Redis - broadcast")
+        log().info {"Published to Redis - broadcast"}
     }
 
     fun subscribeToUser(userId: String) {
         subConnection.async().subscribe("user:$userId")
-        println("🔔 Subscribed to user:$userId")
+        log().info {"Subscribed to user:$userId"}
     }
 
     fun unsubscribeFromUser(userId: String) {
         subConnection.async().unsubscribe("user:$userId")
-        println("🔕 Unsubscribed from user:$userId")
+        log().info {"Unsubscribed from user:$userId"}
     }
 
     fun subscribeToGroup(groupId: String) {
         subConnection.async().subscribe("group:$groupId")
-        println("🔔 Subscribed to group:$groupId")
+        log().info {"Subscribed to group:$groupId"}
     }
 
     fun unsubscribeFromGroup(groupId: String) {
         subConnection.async().unsubscribe("group:$groupId")
-        println("🔕 Unsubscribed from group:$groupId")
+        log().info {"Unsubscribed from group:$groupId"}
     }
 
     private fun createWebSocketMessage(message: Any): WSMessage {

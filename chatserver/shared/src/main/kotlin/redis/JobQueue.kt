@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import util.log
 
 /**
  * Redis job queue for background processing
@@ -26,7 +27,7 @@ class JobQueue(redisUrl: String) {
         }
 
         connection.async().lpush("jobs:pending", json).get()
-        println("📤 Enqueued: ${job::class.simpleName} ${job.id}")
+        log().info {"Enqueued: ${job::class.simpleName} ${job.id}"}
     }
 
     suspend fun dequeue(): Job? = withContext(Dispatchers.IO) {
@@ -49,7 +50,7 @@ class JobQueue(redisUrl: String) {
                     else -> null
                 }
             } catch (e: Exception) {
-                println("❌ Failed to deserialize job: ${e.message}")
+                log().error(e) {"Failed to deserialize job: ${e.message}"}
                 null
             }
         }
