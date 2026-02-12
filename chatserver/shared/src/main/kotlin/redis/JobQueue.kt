@@ -1,60 +1,118 @@
 package redis
 
-import io.lettuce.core.RedisClient
 import jobs.AddMemberJob
 import jobs.CreateGroupJob
 import jobs.Job
 import jobs.RemoveMemberJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import util.log
 
 /**
- * Redis job queue for background processing
- * API servers enqueue, workers dequeue
+ * Job queue using shared Redis connection pool
+ * Just like your repositories use HikariCP!
  */
-class JobQueue(redisUrl: String) {
-    private val client = RedisClient.create(redisUrl)
-    private val connection = client.connect()
+class JobQueue(
+    private val redisPool: RedisPool  // Injected from RedisFactory
+) {
+    private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun enqueue(job: Job) = withContext(Dispatchers.IO) {
-        val json = when (job) {
-            is CreateGroupJob -> Json.encodeToString(job)
-            is AddMemberJob -> Json.encodeToString(job)
-            is RemoveMemberJob -> Json.encodeToString(job)
-        }
+        val jsonJob = json.encodeToString(job)
 
-        connection.async().lpush("jobs:pending", json).get()
-        log().info {"Enqueued: ${job::class.simpleName} ${job.id}"}
+        redisPool.withConnection { conn ->
+            conn.async().lpush("jobs:pending", jsonJob).get()
+            log().info { " Enqueued: ${job::class.simpleName} ${job.id}" }
+        }
     }
 
     suspend fun dequeue(): Job? = withContext(Dispatchers.IO) {
-        val result = connection.async().brpop(5, "jobs:pending").get()
+        redisPool.withConnection { conn ->
+            val jobJson = conn.async().rpoplpush("jobs:pending", "jobs:processing").get()
 
-        if (result != null && result.hasValue()) {
-            val jobJson = result.value
+            if (jobJson != null) {
+                conn.async().expire("jobs:processing", 300).get() // 5 min TTL
 
-            return@withContext try {
-                when {
-                    jobJson.contains("\"name\"") -> Json.decodeFromString<CreateGroupJob>(jobJson)
-                    jobJson.contains("\"groupId\"") && jobJson.contains("\"userId\"") -> {
-                        if (jobJson.contains("AddMember")) {
-                            Json.decodeFromString<AddMemberJob>(jobJson)
-                        } else {
-                            Json.decodeFromString<RemoveMemberJob>(jobJson)
-                        }
-                    }
-
-                    else -> null
+                try {
+                    val job = deserializeJob(jobJson)
+                    log().info { "📬 Dequeued: ${job::class.simpleName} ${job.id}" }
+                    return@withConnection job
+                } catch (e: Exception) {
+                    log().error(e) { "Failed to deserialize job" }
+                    conn.async().lrem("jobs:processing", 1, jobJson).get()
+                    moveToDeadLetter(jobJson, "Deserialization failed: ${e.message}")
+                    null
                 }
-            } catch (e: Exception) {
-                log().error(e) {"Failed to deserialize job: ${e.message}"}
+            } else {
                 null
             }
         }
+    }
 
-        return@withContext null
+    suspend fun ack(job: Job) = withContext(Dispatchers.IO) {
+        redisPool.withConnection { conn ->
+            val jsonJob = json.encodeToString(job)
+            conn.async().lrem("jobs:processing", 1, jsonJob).get()
+            log().info { " Job acknowledged: ${job.id}" }
+        }
+    }
+
+    suspend fun requeue(job: Job, delaySeconds: Long = 5) = withContext(Dispatchers.IO) {
+        redisPool.withConnection { conn ->
+            val jsonJob = json.encodeToString(job)
+            conn.async().lrem("jobs:processing", 1, jsonJob).get()
+            conn.async().zadd(
+                "jobs:delayed",
+                System.currentTimeMillis() + (delaySeconds * 1000),
+                jsonJob
+            ).get()
+            log().warn { " Job requeued (${delaySeconds}s): ${job.id}" }
+        }
+    }
+
+    private fun moveToDeadLetter(jobJson: String, reason: String) {
+        redisPool.withConnection { conn ->
+            val deadLetterEntry = mapOf(
+                "job" to jobJson,
+                "failedAt" to System.currentTimeMillis().toString(),
+                "reason" to reason
+            )
+            conn.async().lpush("jobs:dead", json.encodeToString(deadLetterEntry)).get()
+            log().error { " Job moved to dead letter: $reason" }
+        }
+    }
+
+    private fun deserializeJob(jobJson: String): Job {
+        return when {
+            jobJson.contains("\"name\"") -> json.decodeFromString<CreateGroupJob>(jobJson)
+            jobJson.contains("\"groupId\"") && jobJson.contains("\"userId\"") -> {
+                if (jobJson.contains("AddMember")) {
+                    json.decodeFromString<AddMemberJob>(jobJson)
+                } else {
+                    json.decodeFromString<RemoveMemberJob>(jobJson)
+                }
+            }
+
+            else -> throw IllegalArgumentException("Unknown job type")
+        }
+    }
+
+    suspend fun getQueueLength(): Long = withContext(Dispatchers.IO) {
+        redisPool.withConnection { conn ->
+            conn.async().llen("jobs:pending").get()
+        }
+    }
+
+    suspend fun getProcessingCount(): Long = withContext(Dispatchers.IO) {
+        redisPool.withConnection { conn ->
+            conn.async().llen("jobs:processing").get()
+        }
+    }
+
+    suspend fun getDeadLetterCount(): Long = withContext(Dispatchers.IO) {
+        redisPool.withConnection { conn ->
+            conn.async().llen("jobs:dead").get()
+        }
     }
 }

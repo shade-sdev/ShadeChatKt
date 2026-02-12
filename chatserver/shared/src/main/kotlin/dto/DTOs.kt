@@ -184,3 +184,28 @@ data class JobAcceptedResponse(
 data class MessageIdResponse(
     val id: String
 )
+
+/**
+ * Pool statistics - for monitoring/health checks
+ */
+@Serializable
+data class RedisPoolStats(
+    val active: Int,
+    val idle: Int,
+    val total: Int,
+    val maxTotal: Int,
+    val created: Long,
+    val destroyed: Long,
+    val waiters: Int
+)
+
+@Serializable
+data class ServerInfoResponse(
+    val serverId: String,
+    val usersOnThisServer: Long,
+    val totalUsersOnline: Long,
+    val allServers: List<String>,
+    val myIp: String,
+    val xForwardedFor: String? = null,
+    val loadBalancer: String
+)

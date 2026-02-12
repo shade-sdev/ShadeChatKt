@@ -3,6 +3,7 @@ import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
 import database.DatabaseFactory
 import dto.ErrorResponse
+import dto.ServerInfoResponse
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -23,7 +24,9 @@ import kotlinx.serialization.json.Json
 import redis.ConnectionRegistry
 import redis.JobQueue
 import redis.MessageQueue
+import redis.RedisFactory
 import redis.RedisMessageBus
+import redis.RedisPool
 import repository.DMRepository
 import repository.GroupRepository
 import repository.MessageRepository
@@ -53,10 +56,10 @@ fun Application.module() {
 suspend fun Application.configureApp() {
     val serverId = System.getenv("SERVER_ID") ?: "api-server-1"
     val jwtSecret = System.getenv("JWT_SECRET") ?: "dev-secret-key-do-not-use-in-prod"
-    val redisUrl = System.getenv("REDIS_URL") ?: "redis://localhost:6379"
 
     // 1. Core Infrastructure
     DatabaseFactory.init()
+    val redisPool: RedisPool = RedisFactory.init()
 
     val userRepository = UserRepository()
     val groupRepository = GroupRepository()
@@ -66,10 +69,10 @@ suspend fun Application.configureApp() {
 
     // 2. Redis & Connection Management
     val wsManager = WebSocketConnectionManager().apply { setGroupRepository(groupRepository) }
-    val messageBus = RedisMessageBus(redisUrl, wsManager)
-    val jobQueue = JobQueue(redisUrl)
-    val messageQueue = MessageQueue(redisUrl)
-    val connectionRegistry = ConnectionRegistry(redisUrl)
+    val messageBus = RedisMessageBus(redisPool, wsManager)
+    val jobQueue = JobQueue(redisPool)
+    val messageQueue = MessageQueue(redisPool)
+    val connectionRegistry = ConnectionRegistry(redisPool)
 
     // Heartbeat logic
     val heartbeatJob = launch(Dispatchers.IO) {
@@ -77,6 +80,7 @@ suspend fun Application.configureApp() {
             delay(30_000)
             try {
                 connectionRegistry.heartbeat()
+                log().debug { "Heartbeat sent, pool stats: ${redisPool.stats()}" }
             } catch (ex: Exception) {
                 log().error(ex) { "Heartbeat error" }
             }
@@ -174,12 +178,53 @@ suspend fun Application.configureApp() {
         groupRoutes(groupService, messageService, jobQueue)
         dmRoutes(dmService, messageService)
         websocketRoute(wsManager, userService, dmRepository, groupRepository, messageBus, messageQueue, connectionRegistry)
+
+        get("/admin/redis/stats") {
+            call.respond(redisPool.stats())
+        }
+
+        get("/admin/redis/queues") {
+            val stats = mapOf(
+                "jobs_pending" to jobQueue.getQueueLength(),
+                "jobs_processing" to jobQueue.getProcessingCount(),
+                "jobs_dead" to jobQueue.getDeadLetterCount(),
+                "users_online" to connectionRegistry.getTotalOnlineUsers(),
+                "users_on_this_server" to connectionRegistry.getConnectedUsersCount()
+            )
+            call.respond(stats)
+        }
+
+        get("/admin/server/info") {
+            call.respond(
+                ServerInfoResponse(
+                    serverId = serverId,
+                    usersOnThisServer = connectionRegistry.getConnectedUsersCount(),
+                    totalUsersOnline = connectionRegistry.getTotalOnlineUsers(),
+                    allServers = connectionRegistry.getAllServers(),
+                    myIp = call.request.origin.remoteHost,
+                    xForwardedFor = call.request.headers["X-Forwarded-For"],
+                    loadBalancer = call.request.headers["X-Forwarded-Host"] ?: "none"
+                )
+            )
+        }
     }
 
-    // 6. Lifecycle Management (Updated for Ktor 3)
+    // 6. Lifecycle Management
+    monitor.subscribe(ApplicationStopping) {
+        runBlocking {
+            log().info { "Shutting down Redis connections..." }
+
+            heartbeatJob.cancel()
+            connectionRegistry.removeServer()
+            messageBus.close()
+            RedisFactory.close()
+        }
+    }
+
+    // 7. Lifecycle Management
     monitor.subscribe(ApplicationStopped) {
-        heartbeatJob.cancel()
         log().info { "Server $serverId stopped." }
+        heartbeatJob.cancel()
     }
 
     log().info { "API Server $serverId ready on port ${engine.environment.config.port}" }

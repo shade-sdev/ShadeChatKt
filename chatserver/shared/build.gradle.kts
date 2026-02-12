@@ -40,7 +40,10 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-java-time:0.55.0")
     implementation("org.jetbrains.exposed:exposed-kotlin-datetime:0.55.0")
     implementation("org.postgresql:postgresql:42.7.9")
+
+    // Connection Pooling
     implementation("com.zaxxer:HikariCP:6.0.0")
+    implementation("org.apache.commons:commons-pool2:2.13.1")
 
     // Flyway
     implementation("org.flywaydb:flyway-core:12.0.0")

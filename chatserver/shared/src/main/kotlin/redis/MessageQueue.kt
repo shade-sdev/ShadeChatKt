@@ -1,67 +1,64 @@
 package redis
 
 import dto.NewMessageNotification
-import io.lettuce.core.RedisClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import util.log
 
 /**
- * Queue for offline message delivery
- * Messages stored here when recipient is offline
- * Delivered when user connects
+ * Offline message queue using shared Redis connection pool
  */
-/**
- * Queue for offline message delivery
- * Messages stored here when recipient is offline
- * Delivered when user connects
- */
-class MessageQueue(redisUrl: String) {
-    private val client = RedisClient.create(redisUrl)
-    private val connection = client.connect()
+class MessageQueue(
+    private val redisPool: RedisPool
+) {
+    private val json = Json { ignoreUnknownKeys = true }
 
-    /**
-     * Queue message for offline user
-     * TTL: 7 days
-     */
     suspend fun queueMessageForUser(userId: String, message: NewMessageNotification) = withContext(Dispatchers.IO) {
-        val json = Json.encodeToString(message)
-        val key = "pending:$userId"
-
-        connection.async().lpush(key, json).get()
-        connection.async().expire(key, 604800).get() // 7 days
-        log().info { "Queued message for offline user: $userId" }
+        redisPool.withConnection { conn ->
+            val key = "pending:$userId"
+            val jsonMsg = json.encodeToString(message)
+            conn.async().lpush(key, jsonMsg).get()
+            conn.async().expire(key, 604800).get() // 7 days
+            log().info { "📥 Queued message for offline user: $userId" }
+        }
     }
 
-    /**
-     * Get all pending messages for user
-     * Called when user connects
-     */
     suspend fun getPendingMessages(userId: String): List<NewMessageNotification> = withContext(Dispatchers.IO) {
-        val key = "pending:$userId"
-        val messages = connection.async().lrange(key, 0, -1).get()
+        redisPool.withConnection { conn ->
+            val key = "pending:$userId"
+            val messages = conn.async().lrange(key, 0, -1).get()
+            conn.async().del(key).get()
 
-        connection.async().del(key).get()
+            log().info { " Retrieved ${messages.size} pending messages for: $userId" }
 
-        log().info { "Retrieved ${messages.size} pending messages for user: $userId" }
-
-        return@withContext messages.mapNotNull { json ->
-            try {
-                Json.decodeFromString<NewMessageNotification>(json)
-            } catch (e: Exception) {
-                log().error(e) { "⚠️ Failed to parse pending message: ${e.message}"}
-                null
+            return@withConnection messages.mapNotNull { jsonStr ->
+                try {
+                    json.decodeFromString<NewMessageNotification>(jsonStr)
+                } catch (e: Exception) {
+                    log().error(e) { "Failed to parse pending message" }
+                    null
+                }
             }
         }
     }
 
     suspend fun hasPendingMessages(userId: String): Boolean = withContext(Dispatchers.IO) {
-        return@withContext connection.async().llen("pending:$userId").get() > 0
+        redisPool.withConnection { conn ->
+            conn.async().llen("pending:$userId").get() > 0
+        }
     }
 
     suspend fun getPendingMessageCount(userId: String): Long = withContext(Dispatchers.IO) {
-        return@withContext connection.async().llen("pending:$userId").get()
+        redisPool.withConnection { conn ->
+            conn.async().llen("pending:$userId").get()
+        }
+    }
+
+    suspend fun clearPendingMessages(userId: String) = withContext(Dispatchers.IO) {
+        redisPool.withConnection { conn ->
+            conn.async().del("pending:$userId").get()
+            log().info { " Cleared pending messages for: $userId" }
+        }
     }
 }

@@ -10,6 +10,17 @@ x-db-env: &db-env
   DB_CONNECTION_TIMEOUT_MS: "30000"
   DB_SSL: "false"
 
+x-redis-env: &redis-env
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ""
+  REDIS_DATABASE: "0"
+  REDIS_SSL: "false"
+  REDIS_MAX_POOL_SIZE: "10"
+  REDIS_MIN_IDLE: "2"
+  REDIS_MAX_IDLE: "5"
+  REDIS_CONNECTION_TIMEOUT_MS: "30000"
+
 services:
   redis:
     image: redis:8.4.1-alpine
@@ -50,10 +61,10 @@ services:
     image: chatserver/api-server:latest
     container_name: api-server-1
     environment:
+      <<: [*db-env, *redis-env]
       REDIS_URL: redis://redis:6379
       SERVER_ID: api-server-1
       JWT_SECRET: production-secret-change-me
-      <<: *db-env
     depends_on:
       redis:
         condition: service_healthy
@@ -66,10 +77,10 @@ services:
     image: chatserver/api-server:latest
     container_name: api-server-2
     environment:
+      <<: [*db-env, *redis-env]
       REDIS_URL: redis://redis:6379
       SERVER_ID: api-server-2
       JWT_SECRET: production-secret-change-me
-      <<: *db-env
     depends_on:
       redis:
         condition: service_healthy
@@ -82,9 +93,10 @@ services:
     image: chatserver/worker:latest
     container_name: worker-1
     environment:
+      <<: [*db-env, *redis-env]
       REDIS_URL: redis://redis:6379
       WORKER_ID: worker-1
-      <<: *db-env
+      SERVER_ID: worker-1
     depends_on:
       redis:
         condition: service_healthy
@@ -97,9 +109,10 @@ services:
     image: chatserver/worker:latest
     container_name: worker-2
     environment:
+      <<: [*db-env, *redis-env]
       REDIS_URL: redis://redis:6379
       WORKER_ID: worker-2
-      <<: *db-env
+      SERVER_ID: worker-2
     depends_on:
       redis:
         condition: service_healthy
