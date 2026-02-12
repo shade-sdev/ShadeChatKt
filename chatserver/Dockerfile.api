@@ -1,0 +1,42 @@
+# Stage 1: Build
+FROM eclipse-temurin:21-jdk-alpine AS build
+WORKDIR /app
+
+# Gradle wrapper
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle.kts .
+COPY settings.gradle.kts .
+COPY gradle.properties .
+
+RUN chmod +x gradlew && sed -i 's/\r$//' gradlew
+
+# Copy all projects
+COPY shared shared
+COPY api-server api-server
+COPY worker worker
+
+# Build API server
+RUN ./gradlew :api-server:installDist --no-daemon
+
+# Stage 2: Runtime
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+
+# Copy built API server from correct path
+COPY --from=build /app/api-server/build/install/api-server ./
+
+# Logback config
+COPY api-server/src/main/resources/logback.xml ./config/logback.xml
+
+# JVM options
+ENV JAVA_OPTS="-XX:+UseContainerSupport \
+               -XX:MaxRAMPercentage=75.0 \
+               -XX:+UseZGC \
+               -XX:+ZGenerational \
+               -Xshare:on \
+               -Djava.security.egd=file:/dev/./urandom \
+               -Dlogback.configurationFile=/app/config/logback.xml"
+
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "bin/api-server $JAVA_OPTS"]

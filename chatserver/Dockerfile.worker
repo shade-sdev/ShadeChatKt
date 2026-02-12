@@ -1,0 +1,47 @@
+# =========================
+# Stage 1: Build
+# =========================
+FROM eclipse-temurin:21-jdk-alpine AS build
+WORKDIR /app
+
+# Copy Gradle wrapper and config
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle.kts .
+COPY settings.gradle.kts .
+COPY gradle.properties .
+
+# Fix permissions for gradlew
+RUN chmod +x gradlew && sed -i 's/\r$//' gradlew
+
+# Copy source code (keep structure for multi-project Gradle)
+COPY shared shared
+COPY worker worker
+COPY api-server api-server
+
+# Build the Worker
+RUN ./gradlew :worker:installDist --no-daemon
+
+# =========================
+# Stage 2: Runtime
+# =========================
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+
+# Copy built Worker from correct subproject path
+COPY --from=build /app/worker/build/install/worker ./
+
+# Copy Logback configuration
+COPY worker/src/main/resources/logback.xml ./config/logback.xml
+
+# JVM Optimization Flags
+ENV JAVA_OPTS="-XX:+UseContainerSupport \
+               -XX:MaxRAMPercentage=75.0 \
+               -XX:+UseZGC \
+               -XX:+ZGenerational \
+               -Xshare:on \
+               -Djava.security.egd=file:/dev/./urandom \
+               -Dlogback.configurationFile=/app/config/logback.xml"
+
+# Worker doesn't need to expose HTTP port
+ENTRYPOINT ["sh", "-c", "bin/worker $JAVA_OPTS"]
