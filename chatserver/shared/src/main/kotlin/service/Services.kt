@@ -15,6 +15,15 @@ import repository.GroupRepository
 import repository.MessageRepository
 import repository.UserRepository
 import dto.*
+import io.livekit.server.AccessToken
+import io.livekit.server.RoomServiceClient
+import livekit.LivekitModels
+import livekit.LivekitRoom
+import model.Call
+import model.CallParticipant
+import model.CallStatus
+import model.CallType
+import repository.CallRepository
 import util.log
 import kotlin.time.Clock
 import java.util.*
@@ -420,5 +429,479 @@ class DMService(
             ),
             createdAt = dm.createdAt
         )
+    }
+}
+
+/**
+ * Call service - orchestrates voice/video call logic
+ * Integrates LiveKit with existing chat infrastructure
+ */
+class CallService(
+    private val callRepository: CallRepository,
+    private val userRepository: UserRepository,
+    private val dmRepository: DMRepository,
+    private val groupRepository: GroupRepository,
+    private val liveKitService: LiveKitService,
+    private val messageBus: RedisMessageBus
+) {
+
+    /**
+     * Initiate a new call (DM or Group)
+     * Creates LiveKit room and sends invitations via WebSocket
+     */
+    suspend fun initiateCall(
+        userId: String,
+        conversationId: String,
+        callType: CallType
+    ): CallResponse {
+        log().info { "User $userId initiating $callType call for conversation $conversationId" }
+
+        // Validate conversation exists and user has access
+        val participants = when (callType) {
+            CallType.DM -> {
+                val dm = dmRepository.findById(conversationId)
+                    ?: throw IllegalArgumentException("DM conversation not found")
+
+                if (userId != dm.participant1Id && userId != dm.participant2Id) {
+                    throw IllegalArgumentException("User not a participant in this DM")
+                }
+
+                // Check for existing active call
+                val existingCall = callRepository.findActiveCallByDmId(conversationId)
+                if (existingCall != null) {
+                    throw IllegalStateException("Call already in progress for this conversation")
+                }
+
+                listOf(dm.participant1Id, dm.participant2Id)
+            }
+
+            CallType.GROUP -> {
+                val group = groupRepository.findById(conversationId)
+                    ?: throw IllegalArgumentException("Group not found")
+
+                if (userId !in group.memberIds) {
+                    throw IllegalArgumentException("User not a member of this group")
+                }
+
+                // Check for existing active call
+                val existingCall = callRepository.findActiveCallByGroupId(conversationId)
+                if (existingCall != null) {
+                    throw IllegalStateException("Call already in progress for this group")
+                }
+
+                (group.memberIds + group.adminId).distinct()
+            }
+        }
+
+        // Generate unique room name
+        val roomName = "call_${UUID.randomUUID()}"
+
+        // Create LiveKit room
+        liveKitService.createRoom(roomName, maxParticipants = if (callType == CallType.DM) 2 else null)
+
+        // Create call record
+        val call = Call(
+            id = UUID.randomUUID().toString(),
+            roomName = roomName,
+            callType = callType,
+            dmId = if (callType == CallType.DM) conversationId else null,
+            groupId = if (callType == CallType.GROUP) conversationId else null,
+            initiatedBy = userId,
+            status = CallStatus.ACTIVE,
+            createdAt = Clock.System.now()
+        )
+
+        callRepository.save(call)
+
+        // Add initiator as first participant
+        val initiatorParticipant = CallParticipant(
+            callId = call.id,
+            userId = userId,
+            joinedAt = Clock.System.now()
+        )
+        callRepository.addParticipant(initiatorParticipant)
+
+        // Send invitations to all participants via WebSocket
+        val initiator = userRepository.findById(userId)!!
+        val invitation = CallInvitation(
+            callId = call.id,
+            roomName = roomName,
+            callType = callType.name.lowercase(),
+            conversationId = conversationId,
+            initiatedBy = userId,
+            initiatorName = initiator.displayName,
+            participants = participants
+        )
+
+        // Send to all participants except initiator
+        participants.filter { it != userId }.forEach { participantId ->
+            messageBus.publishToUser(participantId, invitation)
+        }
+
+        log().info { "Call ${call.id} initiated successfully" }
+
+        return toResponse(call)
+    }
+
+    /**
+     * Join an existing call
+     * Generates LiveKit token for the user
+     */
+    suspend fun joinCall(userId: String, callId: String): CallTokenResponse {
+        log().info { "User $userId joining call $callId" }
+
+        val call = callRepository.findById(callId)
+            ?: throw IllegalArgumentException("Call not found")
+
+        if (call.status != CallStatus.ACTIVE) {
+            throw IllegalStateException("Call has ended")
+        }
+
+        // Verify user is invited to this call
+        val isAuthorized = when (call.callType) {
+            CallType.DM -> {
+                val dm = dmRepository.findById(call.dmId!!)!!
+                userId == dm.participant1Id || userId == dm.participant2Id
+            }
+            CallType.GROUP -> {
+                val group = groupRepository.findById(call.groupId!!)!!
+                userId in group.memberIds || userId == group.adminId
+            }
+        }
+
+        if (!isAuthorized) {
+            throw IllegalArgumentException("User not authorized to join this call")
+        }
+
+        // Check if user already in call
+        val existingParticipant = callRepository.findParticipantsByCallId(callId)
+            .find { it.userId == userId && it.leftAt == null }
+
+        if (existingParticipant == null) {
+            // Add as new participant
+            val participant = CallParticipant(
+                callId = callId,
+                userId = userId,
+                joinedAt = Clock.System.now()
+            )
+            callRepository.addParticipant(participant)
+
+            // Notify other participants
+            val user = userRepository.findById(userId)!!
+            val statusUpdate = CallStatusUpdate(
+                callId = callId,
+                action = "participant_joined",
+                userId = userId,
+                userName = user.displayName
+            )
+
+            // Get all other active participants
+            val otherParticipants = callRepository.findActiveParticipants(callId)
+                .filter { it.userId != userId }
+
+            otherParticipants.forEach { participant ->
+                messageBus.publishToUser(participant.userId, statusUpdate)
+            }
+        }
+
+        // Generate LiveKit token
+        val user = userRepository.findById(userId)!!
+        val token = liveKitService.generateToken(
+            roomName = call.roomName,
+            userId = userId,
+            userName = user.displayName,
+            canPublish = true,
+            canSubscribe = true
+        )
+
+        val liveKitUrl = System.getenv("LIVEKIT_URL") ?: "ws://localhost:7880"
+
+        return CallTokenResponse(
+            callId = call.id,
+            roomName = call.roomName,
+            token = token,
+            url = liveKitUrl
+        )
+    }
+
+    /**
+     * End a call
+     * Only the initiator can end the call
+     */
+    suspend fun endCall(userId: String, callId: String): Boolean {
+        log().info { "User $userId ending call $callId" }
+
+        val call = callRepository.findById(callId)
+            ?: throw IllegalArgumentException("Call not found")
+
+        // Only initiator can end the call
+        if (call.initiatedBy != userId) {
+            throw IllegalArgumentException("Only the call initiator can end the call")
+        }
+
+        if (call.status == CallStatus.ENDED) {
+            return true
+        }
+
+        // Update call status
+        callRepository.update(callId) {
+            it.copy(
+                status = CallStatus.ENDED,
+                endedAt = Clock.System.now()
+            )
+        }
+
+        // Mark all active participants as left
+        val activeParticipants = callRepository.findActiveParticipants(callId)
+        val now = Clock.System.now()
+        activeParticipants.forEach { participant ->
+            callRepository.updateParticipantLeftTime(callId, participant.userId, now)
+        }
+
+        // Delete LiveKit room
+        liveKitService.deleteRoom(call.roomName)
+
+        // Notify all participants
+        val statusUpdate = CallStatusUpdate(
+            callId = callId,
+            action = "ended"
+        )
+
+        activeParticipants.forEach { participant ->
+            messageBus.publishToUser(participant.userId, statusUpdate)
+        }
+
+        log().info { "Call $callId ended successfully" }
+
+        return true
+    }
+
+    /**
+     * Leave a call (participant leaves but call continues)
+     */
+    suspend fun leaveCall(userId: String, callId: String): Boolean {
+        log().info { "User $userId leaving call $callId" }
+
+        val call = callRepository.findById(callId)
+            ?: throw IllegalArgumentException("Call not found")
+
+        if (call.status == CallStatus.ENDED) {
+            return true
+        }
+
+        // Mark participant as left
+        callRepository.updateParticipantLeftTime(callId, userId, Clock.System.now())
+
+        // Notify other participants
+        val user = userRepository.findById(userId)!!
+        val statusUpdate = CallStatusUpdate(
+            callId = callId,
+            action = "participant_left",
+            userId = userId,
+            userName = user.displayName
+        )
+
+        val activeParticipants = callRepository.findActiveParticipants(callId)
+        activeParticipants.forEach { participant ->
+            messageBus.publishToUser(participant.userId, statusUpdate)
+        }
+
+        // If DM call and both left, end the call
+        if (call.callType == CallType.DM) {
+            val remainingParticipants = callRepository.findActiveParticipants(callId)
+            if (remainingParticipants.isEmpty()) {
+                log().info { "All participants left DM call $callId, ending call" }
+                callRepository.update(callId) {
+                    it.copy(status = CallStatus.ENDED, endedAt = Clock.System.now())
+                }
+                liveKitService.deleteRoom(call.roomName)
+            }
+        }
+
+        return true
+    }
+
+    /**
+     * Get active call for a conversation (if any)
+     */
+    suspend fun getActiveCall(conversationId: String, callType: CallType): CallResponse? {
+        val call = when (callType) {
+            CallType.DM -> callRepository.findActiveCallByDmId(conversationId)
+            CallType.GROUP -> callRepository.findActiveCallByGroupId(conversationId)
+        }
+
+        return call?.let { toResponse(it) }
+    }
+
+    /**
+     * Get call details
+     */
+    suspend fun getCall(callId: String): CallResponse? {
+        val call = callRepository.findById(callId) ?: return null
+        return toResponse(call)
+    }
+
+    private suspend fun toResponse(call: Call): CallResponse {
+        val participants = callRepository.findParticipantsByCallId(call.id)
+        val initiator = userRepository.findById(call.initiatedBy)!!
+
+        val participantResponses = participants.map { participant ->
+            val user = userRepository.findById(participant.userId)!!
+            CallParticipantResponse(
+                userId = user.id,
+                userName = user.displayName,
+                joinedAt = participant.joinedAt,
+                leftAt = participant.leftAt
+            )
+        }
+
+        return CallResponse(
+            id = call.id,
+            roomName = call.roomName,
+            callType = call.callType,
+            dmId = call.dmId,
+            groupId = call.groupId,
+            initiatedBy = call.initiatedBy,
+            initiatorName = initiator.displayName,
+            status = call.status,
+            participants = participantResponses,
+            createdAt = call.createdAt,
+            endedAt = call.endedAt
+        )
+    }
+}
+
+
+/**
+ * LiveKit service - handles LiveKit SDK operations
+ * Wrapper around LiveKit server SDK for room and token management
+ */
+class LiveKitService {
+    private val apiUrl: String = System.getenv("LIVEKIT_URL") ?: "http://localhost:7880"
+    private val apiKey: String = System.getenv("LIVEKIT_API_KEY") ?: "devkey"
+    private val apiSecret: String = System.getenv("LIVEKIT_API_SECRET") ?: "secret"
+
+    private val roomClient: RoomServiceClient by lazy {
+        RoomServiceClient.createClient(apiUrl, apiKey, apiSecret)
+    }
+
+    /**
+     * Create a LiveKit room
+     * @param roomName Unique room identifier
+     * @param maxParticipants Optional max participants (null = unlimited)
+     * @return LiveKit room object
+     */
+    suspend fun createRoom(roomName: String, maxParticipants: Int? = null): LivekitModels.Room {
+        log().info { "Creating LiveKit room: $roomName" }
+
+        val call = roomClient.createRoom(name = roomName, maxParticipants = maxParticipants)
+        val response = call.execute()
+
+        if (!response.isSuccessful) {
+            throw Exception("Failed to create room: ${response.errorBody()?.string()}")
+        }
+
+        return response.body() ?: throw Exception("Empty response from LiveKit")
+    }
+
+    /**
+     * Generate access token for a user to join a room
+     * @param roomName Room to join
+     * @param userId User identifier
+     * @param userName Display name
+     * @param canPublish Whether user can publish audio/video
+     * @param canSubscribe Whether user can subscribe to others' streams
+     * @return JWT token string
+     */
+    fun generateToken(
+        roomName: String,
+        userId: String,
+        userName: String,
+        canPublish: Boolean = true,
+        canSubscribe: Boolean = true
+    ): String {
+        log().info { "Generating token for user $userId in room $roomName" }
+
+        val token = AccessToken(apiKey, apiSecret)
+        token.name = userName
+        token.identity = userId
+        token.metadata = """{"userId":"$userId"}"""
+
+        // Set permissions
+        token.addGrants(
+            io.livekit.server.RoomJoin(true),
+            io.livekit.server.RoomName(roomName)
+        )
+
+        if (canPublish) {
+            token.addGrants(
+                io.livekit.server.CanPublish(true),
+                io.livekit.server.CanPublishData(true)
+            )
+        }
+
+        if (canSubscribe) {
+            token.addGrants(io.livekit.server.CanSubscribe(true))
+        }
+
+        // Token valid for 6 hours
+        token.ttl = 6 * 60 * 60 * 1000
+
+        return token.toJwt()
+    }
+
+    /**
+     * Delete a room (cleanup after call ends)
+     */
+    suspend fun deleteRoom(roomName: String): Boolean {
+        log().info { "Deleting LiveKit room: $roomName" }
+
+        try {
+            val call = roomClient.deleteRoom(roomName)
+            val response = call.execute()
+            return response.isSuccessful
+        } catch (e: Exception) {
+            log().error(e) { "Failed to delete room $roomName" }
+            return false
+        }
+    }
+
+    /**
+     * List participants in a room
+     */
+    suspend fun listParticipants(roomName: String): List<LivekitModels.ParticipantInfo> {
+        try {
+            val call = roomClient.listParticipants(roomName)
+            val response = call.execute()
+
+            if (!response.isSuccessful) {
+                log().warn { "Failed to list participants for room $roomName" }
+                return emptyList()
+            }
+
+            return response.body() ?: emptyList()
+        } catch (e: Exception) {
+            log().error(e) { "Error listing participants for room $roomName" }
+            return emptyList()
+        }
+    }
+
+    /**
+     * Get room info
+     */
+    suspend fun getRoom(roomName: String): LivekitModels.Room? {
+        try {
+            val call = roomClient.listRooms(listOf(roomName))
+            val response = call.execute()
+
+            if (!response.isSuccessful) {
+                return null
+            }
+
+            return response.body()?.firstOrNull()
+        } catch (e: Exception) {
+            log().error(e) { "Error getting room $roomName" }
+            return null
+        }
     }
 }

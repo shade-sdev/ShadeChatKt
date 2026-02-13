@@ -116,6 +116,8 @@ class RedisMessageBus(
             is UserStatusUpdate -> WSMessage("user_status", json.encodeToString(message))
             is GroupInvitation -> WSMessage("group_invitation", json.encodeToString(message))
             is GroupUpdated -> WSMessage("group_updated", json.encodeToString(message))
+            is CallInvitation -> WSMessage("call_invitation", json.encodeToString(message))
+            is CallStatusUpdate -> WSMessage("call_status", json.encodeToString(message))
             else -> WSMessage("unknown", "\"${message.toString()}\"")
         }
     }

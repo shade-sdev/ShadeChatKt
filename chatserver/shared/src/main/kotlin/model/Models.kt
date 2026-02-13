@@ -46,3 +46,32 @@ data class DirectMessageConversation(
     val participant2Id: String,
     val createdAt: Instant
 )
+
+enum class CallType {
+    DM, GROUP
+}
+
+enum class CallStatus {
+    ACTIVE, ENDED
+}
+
+@Serializable
+data class Call(
+    val id: String,
+    val roomName: String,
+    val callType: CallType,
+    val dmId: String? = null,
+    val groupId: String? = null,
+    val initiatedBy: String,
+    val status: CallStatus = CallStatus.ACTIVE,
+    val createdAt: Instant,
+    val endedAt: Instant? = null
+)
+
+@Serializable
+data class CallParticipant(
+    val callId: String,
+    val userId: String,
+    val joinedAt: Instant,
+    val leftAt: Instant? = null
+)

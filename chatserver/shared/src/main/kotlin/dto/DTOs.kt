@@ -3,6 +3,8 @@ package dto
 import model.UserStatus
 import kotlin.time.Instant
 import kotlinx.serialization.Serializable
+import model.CallStatus
+import model.CallType
 
 // Auth DTOs
 @Serializable
@@ -208,4 +210,81 @@ data class ServerInfoResponse(
     val myIp: String,
     val xForwardedFor: String? = null,
     val loadBalancer: String
+)
+
+// Request DTOs
+@Serializable
+data class InitiateCallRequest(
+    val conversationId: String,
+    val callType: String // "dm" or "group"
+)
+
+@Serializable
+data class JoinCallRequest(
+    val callId: String
+)
+
+@Serializable
+data class EndCallRequest(
+    val callId: String
+)
+
+// Response DTOs
+@Serializable
+data class CallResponse(
+    val id: String,
+    val roomName: String,
+    val callType: CallType,
+    val dmId: String?,
+    val groupId: String?,
+    val initiatedBy: String,
+    val initiatorName: String,
+    val status: CallStatus,
+    val participants: List<CallParticipantResponse>,
+    val createdAt: Instant,
+    val endedAt: Instant?
+)
+
+@Serializable
+data class CallParticipantResponse(
+    val userId: String,
+    val userName: String,
+    val joinedAt: Instant,
+    val leftAt: Instant?
+)
+
+@Serializable
+data class CallTokenResponse(
+    val callId: String,
+    val roomName: String,
+    val token: String,
+    val url: String
+)
+
+// WebSocket notification DTOs
+@Serializable
+data class CallInvitation(
+    val callId: String,
+    val roomName: String,
+    val callType: String, // "dm" or "group"
+    val conversationId: String, // dmId or groupId
+    val initiatedBy: String,
+    val initiatorName: String,
+    val participants: List<String> // List of user IDs invited
+)
+
+@Serializable
+data class CallStatusUpdate(
+    val callId: String,
+    val action: String, // "started", "ended", "participant_joined", "participant_left"
+    val userId: String? = null,
+    val userName: String? = null
+)
+
+@Serializable
+data class ActiveCallResponse(
+    val callId: String,
+    val roomName: String,
+    val callType: String,
+    val conversationId: String
 )

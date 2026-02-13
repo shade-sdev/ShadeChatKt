@@ -49,6 +49,8 @@ dependencies {
     implementation("org.flywaydb:flyway-core:12.0.0")
     implementation("org.flywaydb:flyway-database-postgresql:12.0.0")
 
+    api("io.livekit:livekit-server:0.12.0")
+
     // Logging
     implementation("ch.qos.logback:logback-classic:1.5.29")
     api("io.github.oshai:kotlin-logging:7.0.14")

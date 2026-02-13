@@ -61,3 +61,26 @@ object MessagesTable : Table("messages") {
 
     override val primaryKey = PrimaryKey(id)
 }
+
+object CallsTable : Table("calls") {
+    val id = uuid("id")
+    val roomName = text("room_name").uniqueIndex()
+    val callType = text("call_type") // "DM" or "GROUP"
+    val dmId = uuid("dm_id").references(DmConversationsTable.id).nullable()
+    val groupId = uuid("group_id").references(GroupsTable.id).nullable()
+    val initiatedBy = uuid("initiated_by").references(UsersTable.id)
+    val status = text("status") // "ACTIVE" or "ENDED"
+    val createdAt = timestampWithTimeZone("created_at")
+    val endedAt = timestampWithTimeZone("ended_at").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object CallParticipantsTable : Table("call_participants") {
+    val callId = uuid("call_id").references(CallsTable.id)
+    val userId = uuid("user_id").references(UsersTable.id)
+    val joinedAt = timestampWithTimeZone("joined_at")
+    val leftAt = timestampWithTimeZone("left_at").nullable()
+
+    override val primaryKey = PrimaryKey(callId, userId)
+}

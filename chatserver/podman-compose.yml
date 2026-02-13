@@ -65,6 +65,9 @@ services:
       REDIS_URL: redis://redis:6379
       SERVER_ID: api-server-1
       JWT_SECRET: production-secret-change-me
+      LIVEKIT_URL: ws://livekit:7880  # Internal container communication
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
     depends_on:
       redis:
         condition: service_healthy
@@ -81,6 +84,9 @@ services:
       REDIS_URL: redis://redis:6379
       SERVER_ID: api-server-2
       JWT_SECRET: production-secret-change-me
+      LIVEKIT_URL: ws://livekit:7880  # Internal container communication
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
     depends_on:
       redis:
         condition: service_healthy
@@ -120,6 +126,27 @@ services:
         condition: service_healthy
     networks:
       - chatnet
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit
+    command: --dev --bind 0.0.0.0 --node-ip=livekit
+    ports:
+      - "7880:7880"  # WebSocket
+      - "7881:7881"  # WebSocket (secure)
+      - "7882:7882"  # HTTP (metrics)
+      - "50000-50200:50000-50200/udp"  # RTC ports
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "devkey: secret"
+    networks:
+      - chatnet
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:7880/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   nginx:
     image: nginx:alpine

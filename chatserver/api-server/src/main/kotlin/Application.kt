@@ -27,13 +27,16 @@ import redis.MessageQueue
 import redis.RedisFactory
 import redis.RedisMessageBus
 import redis.RedisPool
+import repository.CallRepository
 import repository.DMRepository
 import repository.GroupRepository
 import repository.MessageRepository
 import repository.UserRepository
 import routes.*
+import service.CallService
 import service.DMService
 import service.GroupService
+import service.LiveKitService
 import service.MessageService
 import service.UserService
 import util.log
@@ -65,6 +68,8 @@ suspend fun Application.configureApp() {
     val groupRepository = GroupRepository()
     val messageRepository = MessageRepository()
     val dmRepository = DMRepository()
+    val callRepository = CallRepository()
+
     initTestData(userRepository, dmRepository)
 
     // 2. Redis & Connection Management
@@ -92,6 +97,16 @@ suspend fun Application.configureApp() {
     val groupService = GroupService(groupRepository, userRepository, messageBus)
     val messageService = MessageService(messageRepository, userRepository, messageBus, dmRepository, groupRepository, messageQueue, connectionRegistry)
     val dmService = DMService(dmRepository, userRepository)
+
+    val liveKitService = LiveKitService()
+    val callService = CallService(
+        callRepository,
+        userRepository,
+        dmRepository,
+        groupRepository,
+        liveKitService,
+        messageBus
+    )
 
     // 4. Plugins
     install(ContentNegotiation) {
@@ -177,6 +192,7 @@ suspend fun Application.configureApp() {
         userRoutes(userService)
         groupRoutes(groupService, messageService, jobQueue)
         dmRoutes(dmService, messageService)
+        callRoutes(callService)
         websocketRoute(wsManager, userService, dmRepository, groupRepository, messageBus, messageQueue, connectionRegistry)
 
         get("/admin/redis/stats") {
