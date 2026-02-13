@@ -1,27 +1,26 @@
-# livekit.yaml
 port: 7880
-rtc:
-  port_range_start: 50000
-  port_range_end: 50200
-  use_external_ip: false
-  stun_servers:
-    - stun:stun.l.google.com:19302
-    - stun:stun1.l.google.com:19302
 
-# API Keys (for development - change in production)
+rtc:
+  use_external_ip: true
+  port_range_start: 50000
+  port_range_end: 60000
+  stun_servers:
+    - stun.l.google.com:19302
+    - stun1.l.google.com:19302
+
+  ice_host_candidates:
+    - 127.0.0.1
+
 keys:
   devkey: secret
 
-# Room settings
 room:
   auto_create: true
   empty_timeout: 300
   max_participants: 100
 
-# Logging
 logging:
-  level: debug  # Set to debug to see connection issues
+  level: debug
   sample: false
 
-# Enable development mode
 development: true

@@ -65,9 +65,10 @@ services:
       REDIS_URL: redis://redis:6379
       SERVER_ID: api-server-1
       JWT_SECRET: production-secret-change-me
-      LIVEKIT_URL: ws://livekit:7880  # Internal container communication
+      LIVEKIT_URL: http://livekit:7880  # Internal container communication
       LIVEKIT_API_KEY: devkey
       LIVEKIT_API_SECRET: secret
+      LIVEKIT_PUBLIC_URL: ws://127.0.0.1:7880
     depends_on:
       redis:
         condition: service_healthy
@@ -84,9 +85,10 @@ services:
       REDIS_URL: redis://redis:6379
       SERVER_ID: api-server-2
       JWT_SECRET: production-secret-change-me
-      LIVEKIT_URL: ws://livekit:7880  # Internal container communication
+      LIVEKIT_URL: http://livekit:7880  # Internal container communication
       LIVEKIT_API_KEY: devkey
       LIVEKIT_API_SECRET: secret
+      LIVEKIT_PUBLIC_URL: ws://127.0.0.1:7880
     depends_on:
       redis:
         condition: service_healthy
@@ -130,7 +132,7 @@ services:
   livekit:
     image: livekit/livekit-server:latest
     container_name: livekit
-    command: --dev --bind 0.0.0.0 --node-ip=livekit
+    command: --dev --bind 0.0.0.0 --node-ip=127.0.0.1
     ports:
       - "7880:7880"  # WebSocket
       - "7881:7881"  # WebSocket (secure)

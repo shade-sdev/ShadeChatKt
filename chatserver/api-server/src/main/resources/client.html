@@ -1,12 +1,13 @@
-<!-- client.html - Updated for new backend architecture -->
+<!-- client.html - CORRECT LiveKit implementation using the SDK properly -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat Application</title>
+    <script src="livekit-client.umd.min.js"></script>
+    <title>Chat Application with Voice/Video Calls</title>
     <style>
-        /* Keep all existing styles exactly the same */
+        /* Keep all your existing styles - I'll add only call-specific styles */
         * {
             margin: 0;
             padding: 0;
@@ -330,6 +331,22 @@
 
         .header-btn.members:hover {
             background: #2980b9;
+        }
+
+        .header-btn.call {
+            background: #27ae60;
+        }
+
+        .header-btn.call:hover {
+            background: #229954;
+        }
+
+        .header-btn.call.active {
+            background: #e74c3c;
+        }
+
+        .header-btn.call.active:hover {
+            background: #c0392b;
         }
 
         /* Messages */
@@ -802,6 +819,338 @@
         .load-more-btn:hover {
             background: #e0e0e0;
         }
+
+        /* ========== CALL STYLES ========== */
+        .call-container {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 400px;
+            background: #1a1e24;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 10001;
+            overflow: hidden;
+            animation: slideInUp 0.3s ease-out;
+            border: 1px solid #34495e;
+        }
+
+        .call-container.active {
+            display: block;
+        }
+
+        .call-container.minimized {
+            width: 280px;
+        }
+
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .call-header {
+            background: #2c3e50;
+            color: white;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .call-header-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .call-header-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #667eea;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .call-header-details h3 {
+            margin-bottom: 4px;
+            font-size: 16px;
+        }
+
+        .call-header-details p {
+            font-size: 13px;
+            color: #95a5a6;
+        }
+
+        .call-close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s;
+        }
+
+        .call-close-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .call-videos {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 8px;
+            padding: 16px;
+            background: #1a1e24;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .call-container.minimized .call-videos {
+            max-height: 160px;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #2c3e50;
+        }
+
+        .video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #2c3e50;
+        }
+
+        .video-label {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .audio-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #27ae60;
+        }
+
+        .audio-indicator.muted {
+            background: #e74c3c;
+        }
+
+        .call-controls {
+            padding: 16px;
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            background: #2c3e50;
+        }
+
+        .call-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.3s;
+            color: white;
+        }
+
+        .call-btn.mic {
+            background: #3498db;
+        }
+
+        .call-btn.mic.muted {
+            background: #e74c3c;
+        }
+
+        .call-btn.end {
+            background: #e74c3c;
+            width: 56px;
+            height: 56px;
+        }
+
+        .call-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .participants-list {
+            padding: 12px 16px;
+            background: #2c3e50;
+            border-top: 1px solid #34495e;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .participants-title {
+            font-size: 13px;
+            color: #95a5a6;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .participant-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 13px;
+            color: white;
+        }
+
+        .participant-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #27ae60;
+        }
+
+        .participant-status.speaking {
+            background: #f1c40f;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .call-incoming {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 10002;
+            width: 320px;
+            text-align: center;
+            animation: ring 2s infinite;
+        }
+
+        @keyframes ring {
+            0% { box-shadow: 0 10px 40px rgba(102, 126, 234, 0.2); }
+            50% { box-shadow: 0 10px 60px rgba(102, 126, 234, 0.6); }
+            100% { box-shadow: 0 10px 40px rgba(102, 126, 234, 0.2); }
+        }
+
+        .call-incoming-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: #667eea;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            font-weight: bold;
+            color: white;
+            margin: 0 auto 16px;
+        }
+
+        .call-incoming h3 {
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+
+        .call-incoming p {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+        }
+
+        .call-incoming-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .call-incoming-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .call-incoming-btn.accept {
+            background: #27ae60;
+            color: white;
+        }
+
+        .call-incoming-btn.accept:hover {
+            background: #229954;
+        }
+
+        .call-incoming-btn.decline {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .call-incoming-btn.decline:hover {
+            background: #c0392b;
+        }
+
+        .connection-quality {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: 8px;
+        }
+
+        .connection-quality.excellent {
+            background: #27ae60;
+        }
+
+        .connection-quality.good {
+            background: #f1c40f;
+        }
+
+        .connection-quality.poor {
+            background: #e67e22;
+        }
+
+        .connection-quality.bad {
+            background: #e74c3c;
+        }
     </style>
 </head>
 <body>
@@ -922,14 +1271,63 @@
     </div>
 </div>
 
+<!-- Call Container -->
+<div id="callContainer" class="call-container">
+    <div class="call-header">
+        <div class="call-header-info">
+            <div class="call-header-avatar" id="callAvatar">📞</div>
+            <div class="call-header-details">
+                <h3 id="callTitle">Call in progress</h3>
+                <p id="callStatus">
+                    Connecting...
+                    <span id="connectionQuality" class="connection-quality"></span>
+                </p>
+            </div>
+        </div>
+        <button class="call-close-btn" onclick="minimizeCall()">—</button>
+    </div>
+
+    <div class="call-videos" id="callVideos"></div>
+
+    <div class="call-controls">
+        <button class="call-btn mic" id="micToggleBtn" onclick="toggleMic()" title="Microphone">🎤</button>
+        <button class="call-btn end" onclick="endCall()" title="End Call">📞</button>
+    </div>
+
+    <div class="participants-list">
+        <div class="participants-title">
+            <span>Participants</span>
+            <span id="participantCount">0</span>
+        </div>
+        <div id="participantsList"></div>
+    </div>
+</div>
+
+<!-- Incoming Call Modal -->
+<div id="incomingCallModal" class="modal-overlay">
+    <div class="call-incoming">
+        <div class="call-incoming-avatar" id="incomingCallAvatar">👤</div>
+        <h3 id="incomingCallTitle">Incoming Call</h3>
+        <p id="incomingCallDetails"></p>
+        <div class="call-incoming-actions">
+            <button class="call-incoming-btn accept" onclick="acceptCall()">Accept</button>
+            <button class="call-incoming-btn decline" onclick="declineCall()">Decline</button>
+        </div>
+    </div>
+</div>
+
 <script>
     // ==================== CONFIGURATION ====================
     const isSecure = window.location.protocol === 'https:';
     const API_BASE = window.location.origin;
     const WS_BASE = `${isSecure ? 'wss' : 'ws'}://${window.location.host}`;
 
+    // LiveKit configuration
+    const LIVEKIT_URL = `ws://${window.location.hostname}:7880`;
+
     console.log(`API Path: ${API_BASE}`);
     console.log(`WebSocket Path: ${WS_BASE}`);
+    console.log(`LiveKit URL: ${LIVEKIT_URL}`);
 
     // ==================== STATE ====================
     const state = {
@@ -940,12 +1338,23 @@
         groups: [],
         currentConversation: null,
         currentGroup: null,
-        messages: new Map(), // Map<dmId, {messages: [], cursor: string, hasMore: bool}>
-        groupMessages: new Map(), // Map<groupId, {messages: [], cursor: string, hasMore: bool}>
+        messages: new Map(),
+        groupMessages: new Map(),
         onlineUsers: new Set(),
         allUsers: [],
         activeTab: 'dms',
         typingTimeouts: new Map(),
+    };
+
+    // ==================== CALL STATE ====================
+    const callState = {
+        room: null,
+        currentCall: null,
+        isMuted: false,
+        callType: null,
+        conversationId: null,
+        incomingCallData: null,
+        participants: new Map(),
     };
 
     // ==================== WEBSOCKET MESSAGE TYPES ====================
@@ -956,7 +1365,9 @@
         USER_STATUS: 'user_status',
         GROUP_INVITATION: 'group_invitation',
         GROUP_UPDATED: 'group_updated',
-        TYPING_INDICATOR: 'typing_indicator'
+        TYPING_INDICATOR: 'typing_indicator',
+        CALL_INVITATION: 'call_invitation',
+        CALL_STATUS: 'call_status'
     };
 
     // ==================== INITIALIZATION ====================
@@ -1081,6 +1492,9 @@
     }
 
     function logout() {
+        if (callState.room) {
+            endCall();
+        }
         if (state.ws) {
             state.ws.close();
         }
@@ -1159,6 +1573,487 @@
             }
         } catch (error) {
             console.error('Error loading all users:', error);
+        }
+    }
+
+    // ==================== CALL FUNCTIONS - CORRECT LiveKit IMPLEMENTATION ====================
+
+    // Start DM call
+    function startDMCall() {
+        if (!state.currentConversation) {
+            showToast('Error', 'No conversation selected');
+            return;
+        }
+
+        if (callState.room) {
+            showToast('Call Active', 'You are already in a call');
+            return;
+        }
+
+        initiateCall(state.currentConversation.id, 'DM');
+    }
+
+    // Start Group call
+    function startGroupCall() {
+        if (!state.currentGroup) {
+            showToast('Error', 'No group selected');
+            return;
+        }
+
+        if (callState.room) {
+            showToast('Call Active', 'You are already in a call');
+            return;
+        }
+
+        initiateCall(state.currentGroup.id, 'group');
+    }
+
+    // Initiate call via backend
+    async function initiateCall(conversationId, callType) {
+        try {
+            showToast('Initiating Call', `Starting ${callType} call...`);
+
+            const response = await apiRequest('/calls', {
+                method: 'POST',
+                body: JSON.stringify({
+                    conversationId: conversationId,
+                    callType: callType
+                })
+            });
+
+            callState.currentCall = response;
+            callState.callType = callType;
+            callState.conversationId = conversationId;
+
+            // Join the call
+            await joinCall(response.id);
+
+        } catch (error) {
+            console.error('Error initiating call:', error);
+
+            if (error.message.includes('Call already in progress')) {
+                showToast('Call Already Active', 'There is an active call in this conversation', 5000);
+                checkActiveCall(conversationId, callType);
+            } else {
+                showToast('Error', 'Failed to start call: ' + error.message);
+            }
+        }
+    }
+
+    // Join an existing call - CORRECT LiveKit implementation
+    async function joinCall(callId) {
+        try {
+            showToast('Joining Call', 'Connecting to call...');
+
+            const tokenResponse = await apiRequest(`/calls/${callId}/join`, {
+                method: 'POST'
+            });
+
+            console.log('Token response:', tokenResponse);
+
+            // Create a new room with options - following the example
+            const room = new LivekitClient.Room({
+                // automatically manage subscribed video quality
+                adaptiveStream: true,
+
+                // optimize publishing bandwidth and CPU for published tracks
+                dynacast: true,
+
+                // default capture settings
+                videoCaptureDefaults: {
+                    resolution: LivekitClient.VideoPresets.h720.resolution,
+                },
+            });
+
+            // Pre-warm connection - call this before connecting to speed up the actual connection
+            room.prepareConnection(LIVEKIT_URL, tokenResponse.token);
+
+            // Set up event listeners - following the example pattern
+            setupLiveKitEventHandlers(room);
+
+            // Connect to room
+            await room.connect(LIVEKIT_URL, tokenResponse.token);
+            console.log('connected to room', room.name);
+
+            callState.room = room;
+
+            // Publish local microphone track - following the example
+            await room.localParticipant.setMicrophoneEnabled(true);
+
+            // Show call UI
+            showCallUI();
+
+            // Hide incoming call modal
+            hideIncomingCallModal();
+
+            // Update call button state
+            updateCallButtonState(true);
+
+            showToast('Connected', 'Connected to call');
+
+        } catch (error) {
+            console.error('Error joining call:', error);
+            showToast('Error', 'Failed to join call: ' + error.message);
+        }
+    }
+
+    // Setup LiveKit event handlers - following the example pattern
+    function setupLiveKitEventHandlers(room) {
+        // Handle track subscribed - from the example
+        room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+            if (track.kind === LivekitClient.Track.Kind.Audio) {
+                // attach it to a new HTMLAudioElement
+                const element = track.attach();
+                document.body.appendChild(element); // Audio elements don't need to be visible
+            }
+        });
+
+        // Handle track unsubscribed - from the example
+        room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+            // remove tracks from all attached elements
+            track.detach();
+        });
+
+        // Handle active speakers changed - from the example
+        room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
+            // Reset all participant indicators
+            document.querySelectorAll('.participant-status').forEach(el => {
+                el.classList.remove('speaking');
+            });
+
+            // Highlight active speakers
+            speakers.forEach(speaker => {
+                const speakerEl = document.querySelector(`[data-participant="${speaker.identity}"] .participant-status`);
+                if (speakerEl) {
+                    speakerEl.classList.add('speaking');
+                }
+            });
+        });
+
+        // Handle participant connected
+        room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+            console.log('Participant connected:', participant.identity);
+
+            callState.participants.set(participant.identity, participant);
+
+            const user = state.allUsers.find(u => u.id === participant.identity);
+            if (user) {
+                showToast('Participant Joined', `${user.displayName} joined the call`);
+            }
+
+            updateParticipantsList();
+        });
+
+        // Handle participant disconnected
+        room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+            console.log('Participant disconnected:', participant.identity);
+
+            callState.participants.delete(participant.identity);
+
+            const user = state.allUsers.find(u => u.id === participant.identity);
+            if (user) {
+                showToast('Participant Left', `${user.displayName} left the call`);
+            }
+
+            updateParticipantsList();
+        });
+
+        // Handle connection state
+        room.on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
+            console.log('Connection state:', state);
+            const callStatus = document.getElementById('callStatus');
+
+            switch (state) {
+                case 'connected':
+                    callStatus.innerHTML = 'Connected <span id="connectionQuality" class="connection-quality excellent"></span>';
+                    break;
+                case 'reconnecting':
+                    callStatus.innerHTML = 'Reconnecting... <span id="connectionQuality" class="connection-quality poor"></span>';
+                    break;
+                case 'disconnected':
+                    callStatus.textContent = 'Disconnected';
+                    break;
+            }
+        });
+
+        // Handle disconnect - from the example
+        room.on(LivekitClient.RoomEvent.Disconnected, () => {
+            console.log('disconnected from room');
+            cleanupCall();
+            hideCallUI();
+            updateCallButtonState(false);
+            showToast('Call Ended', 'You have been disconnected');
+        });
+
+        // Handle connection quality
+        room.on(LivekitClient.RoomEvent.ParticipantConnectionQualityChanged, (connectionQuality, participant) => {
+            if (participant.identity === room.localParticipant.identity) {
+                const qualityEl = document.getElementById('connectionQuality');
+                if (qualityEl) {
+                    qualityEl.className = `connection-quality ${connectionQuality.toLowerCase()}`;
+                }
+            }
+        });
+    }
+
+    // Toggle microphone
+    async function toggleMic() {
+        if (callState.room && callState.room.localParticipant) {
+            const isEnabled = callState.room.localParticipant.isMicrophoneEnabled;
+
+            await callState.room.localParticipant.setMicrophoneEnabled(!isEnabled);
+            callState.isMuted = isEnabled; // If it was enabled, now it's muted
+
+            const micBtn = document.getElementById('micToggleBtn');
+            micBtn.textContent = callState.isMuted ? '🔇' : '🎤';
+            micBtn.classList.toggle('muted', callState.isMuted);
+        }
+    }
+
+    // End call
+    async function endCall() {
+        try {
+            if (callState.room) {
+                callState.room.disconnect();
+
+                if (callState.currentCall) {
+                    console.log(callState)
+                    console.log(callState.currentCall);
+                    await apiRequest(`/calls/${callState.currentCall.id}/end`, {
+                        method: 'POST'
+                    }).catch(e => console.error('Error ending call on backend:', e));
+                }
+            }
+        } catch (error) {
+            console.error('Error ending call:', error);
+        } finally {
+            cleanupCall();
+            hideCallUI();
+            updateCallButtonState(false);
+            showToast('Call Ended', 'You have left the call');
+        }
+    }
+
+    // Clean up call resources
+    function cleanupCall() {
+        if (callState.room) {
+            callState.room = null;
+        }
+
+        callState.currentCall = null;
+        callState.isMuted = false;
+        callState.participants.clear();
+
+        // Remove all audio elements that were attached
+        document.querySelectorAll('audio').forEach(el => {
+            if (el.id !== 'ringtone') el.remove();
+        });
+    }
+
+    // Show call UI
+    function showCallUI() {
+        const callContainer = document.getElementById('callContainer');
+        callContainer.classList.add('active');
+        callContainer.classList.remove('minimized');
+
+        const callTitle = document.getElementById('callTitle');
+        if (callState.callType === 'DM' && state.currentConversation) {
+            callTitle.textContent = `Call with ${state.currentConversation.otherUser.displayName}`;
+            document.getElementById('callAvatar').textContent = state.currentConversation.otherUser.displayName[0].toUpperCase();
+        } else if (callState.callType === 'group' && state.currentGroup) {
+            callTitle.textContent = `Group Call: ${state.currentGroup.name}`;
+            document.getElementById('callAvatar').textContent = '👥';
+        }
+    }
+
+    function hideCallUI() {
+        document.getElementById('callContainer').classList.remove('active');
+    }
+
+    function minimizeCall() {
+        const callContainer = document.getElementById('callContainer');
+        callContainer.classList.toggle('minimized');
+    }
+
+    function updateCallButtonState(inCall) {
+        const callButtons = document.querySelectorAll('.header-btn.call');
+        callButtons.forEach(btn => {
+            if (inCall) {
+                btn.textContent = '📞 In Call';
+                btn.classList.add('active');
+                btn.onclick = () => {
+                    document.getElementById('callContainer').classList.add('active');
+                };
+            } else {
+                if (state.currentConversation) {
+                    btn.textContent = '📞 Call';
+                    btn.onclick = startDMCall;
+                } else if (state.currentGroup) {
+                    btn.textContent = '📞 Group Call';
+                    btn.onclick = startGroupCall;
+                }
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    function updateParticipantsList() {
+        const participantsList = document.getElementById('participantsList');
+        const participantCount = document.getElementById('participantCount');
+
+        participantsList.innerHTML = '';
+        participantCount.textContent = callState.participants.size + 1;
+
+        if (state.user) {
+            const userItem = document.createElement('div');
+            userItem.className = 'participant-item';
+            userItem.setAttribute('data-participant', state.user.id);
+            userItem.innerHTML = `
+                <span class="participant-status"></span>
+                <span>${escapeHtml(state.user.displayName)} (You)</span>
+                ${callState.isMuted ? '<span style="margin-left: auto;">🔇</span>' : ''}
+            `;
+            participantsList.appendChild(userItem);
+        }
+
+        callState.participants.forEach((participant, userId) => {
+            if (userId !== state.user.id) {
+                const user = state.allUsers.find(u => u.id === userId);
+                const userName = user ? user.displayName : 'Unknown User';
+
+                const userItem = document.createElement('div');
+                userItem.className = 'participant-item';
+                userItem.setAttribute('data-participant', userId);
+
+                userItem.innerHTML = `
+                    <span class="participant-status"></span>
+                    <span>${escapeHtml(userName)}</span>
+                `;
+                participantsList.appendChild(userItem);
+            }
+        });
+    }
+
+    async function checkActiveCall(conversationId, callType) {
+        try {
+            const activeCall = await apiRequest(`/calls/active/${callType}/${conversationId}`);
+
+            if (activeCall && confirm('An active call is in progress. Join now?')) {
+                await joinCall(activeCall.id);
+            }
+        } catch (error) {
+            console.error('Error checking active call:', error);
+        }
+    }
+
+    // ==================== INCOMING CALL HANDLING ====================
+
+    function handleCallInvitation(data) {
+        console.log(data)
+        callState.incomingCallData = data;
+
+        const modal = document.getElementById('incomingCallModal');
+        const avatar = document.getElementById('incomingCallAvatar');
+        const title = document.getElementById('incomingCallTitle');
+        const details = document.getElementById('incomingCallDetails');
+
+        avatar.textContent = data.initiatorName[0].toUpperCase();
+        title.textContent = `Incoming ${data.callType.toUpperCase()} Call`;
+        details.innerHTML = `
+            <strong>${escapeHtml(data.initiatorName)}</strong> is calling<br>
+            ${data.callType === 'group' ? 'Group call' : 'Direct call'}
+        `;
+
+        modal.classList.add('active');
+
+        playRingtone();
+
+        setTimeout(() => {
+            if (modal.classList.contains('active')) {
+                declineCall();
+            }
+        }, 30000);
+    }
+
+    async function acceptCall() {
+        if (callState.incomingCallData) {
+            hideIncomingCallModal();
+            stopRingtone();
+
+            callState.callType = callState.incomingCallData.callType;
+            callState.conversationId = callState.incomingCallData.conversationId;
+            callState.currentCall = callState.incomingCallData;
+
+            await joinCall(callState.incomingCallData.callId);
+        }
+    }
+
+    async function declineCall() {
+        if (callState.incomingCallData) {
+            try {
+                await apiRequest(`/calls/${callState.incomingCallData.id}/leave`, {
+                    method: 'POST'
+                });
+            } catch (error) {
+                console.error('Error declining call:', error);
+            }
+
+            hideIncomingCallModal();
+            stopRingtone();
+            callState.incomingCallData = null;
+        }
+    }
+
+    function hideIncomingCallModal() {
+        document.getElementById('incomingCallModal').classList.remove('active');
+    }
+
+    function handleCallStatusUpdate(data) {
+        const { callId, action, userId, userName } = data;
+
+        switch (action) {
+            case 'ended':
+                if (callState.currentCall && callState.currentCall.id === callId) {
+                    showToast('Call Ended', 'The call has ended');
+                    cleanupCall();
+                    hideCallUI();
+                    updateCallButtonState(false);
+                }
+                break;
+        }
+    }
+
+    // ==================== RINGTONE ====================
+
+    let ringtoneAudio = null;
+
+    function playRingtone() {
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.start();
+
+            setTimeout(() => oscillator.stop(), 500);
+
+            ringtoneAudio = setTimeout(playRingtone, 2000);
+        } catch (error) {
+            console.error('Error playing ringtone:', error);
+        }
+    }
+
+    function stopRingtone() {
+        if (ringtoneAudio) {
+            clearTimeout(ringtoneAudio);
+            ringtoneAudio = null;
         }
     }
 
@@ -1246,56 +2141,6 @@
         }
 
         renderConversationList();
-    }
-
-    function startTypingIndicator() {
-        if (!state.currentConversation && !state.currentGroup) return;
-
-        sendTypingIndicator(true);
-
-        if (state.typingTimeouts.has('typing')) {
-            clearTimeout(state.typingTimeouts.get('typing'));
-        }
-
-        const timeoutId = setTimeout(() => {
-            sendTypingIndicator(false);
-            state.typingTimeouts.delete('typing');
-        }, 3000);
-
-        state.typingTimeouts.set('typing', timeoutId);
-    }
-
-    function sendTypingIndicator(isTyping) {
-        if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-
-        let typingData;
-
-        if (state.currentConversation) {
-            typingData = {
-                conversationId: state.currentConversation.id,
-                conversationType: 'dm',
-                userId: state.user.id,
-                userName: state.user.displayName,
-                isTyping: isTyping
-            };
-        } else if (state.currentGroup) {
-            typingData = {
-                conversationId: state.currentGroup.id,
-                conversationType: 'group',
-                userId: state.user.id,
-                userName: state.user.displayName,
-                isTyping: isTyping
-            };
-        } else {
-            return;
-        }
-
-        const message = {
-            type: 'typing_indicator',
-            data: typingData
-        };
-
-        state.ws.send(JSON.stringify(message));
     }
 
     // ==================== UI RENDERING ====================
@@ -1446,14 +2291,42 @@
                 </div>
                 <div class="online-user-actions">
                     <button class="online-user-btn" title="Start chat" data-user-id="${escapeHtml(user.id)}">💬</button>
+                    <button class="online-user-btn" title="Start call" onclick="startCallWithUser('${escapeHtml(user.id)}')">📞</button>
                 </div>
             `;
 
-            const chatButton = userItem.querySelector('.online-user-btn');
+            const chatButton = userItem.querySelector('.online-user-btn:first-child');
             chatButton.addEventListener('click', () => startDMWithUser(user.id));
 
             onlineListContainer.appendChild(userItem);
         });
+    }
+
+    async function startCallWithUser(userId) {
+        try {
+            const existingConversation = state.conversations.find(
+                conv => conv.otherUser.id === userId
+            );
+
+            if (existingConversation) {
+                switchTab('dms');
+                setTimeout(() => selectDMConversation(existingConversation), 100);
+                setTimeout(() => startDMCall(), 200);
+            } else {
+                const response = await apiRequest('/dms', {
+                    method: 'POST',
+                    body: JSON.stringify({ recipientId: userId })
+                });
+
+                state.conversations.push(response);
+                switchTab('dms');
+                setTimeout(() => selectDMConversation(response), 100);
+                setTimeout(() => startDMCall(), 200);
+            }
+        } catch (error) {
+            console.error('Error starting call with user:', error);
+            showToast('Error', 'Failed to start call: ' + error.message);
+        }
     }
 
     async function startDMWithUser(userId) {
@@ -1500,7 +2373,18 @@
             document.getElementById('membersList').style.display = 'none';
 
             const headerActions = document.getElementById('chatHeaderActions');
-            headerActions.innerHTML = '';
+
+            if (callState.room) {
+                headerActions.innerHTML = `
+                    <button class="header-btn call active" onclick="document.getElementById('callContainer').classList.add('active')">
+                        📞 In Call
+                    </button>
+                `;
+            } else {
+                headerActions.innerHTML = `
+                    <button class="header-btn call" onclick="startDMCall()">📞 Call</button>
+                `;
+            }
 
             await loadMessages(conversation.id, 'dm');
         } catch (error) {
@@ -1529,9 +2413,20 @@
         renderMemberTags();
 
         const headerActions = document.getElementById('chatHeaderActions');
-        headerActions.innerHTML = `
-            <button class="header-btn members" onclick="showGroupMembers()">👥 Members</button>
-        `;
+
+        if (callState.room) {
+            headerActions.innerHTML = `
+                <button class="header-btn members" onclick="showGroupMembers()">👥 Members</button>
+                <button class="header-btn call active" onclick="document.getElementById('callContainer').classList.add('active')">
+                    📞 In Call
+                </button>
+            `;
+        } else {
+            headerActions.innerHTML = `
+                <button class="header-btn members" onclick="showGroupMembers()">👥 Members</button>
+                <button class="header-btn call" onclick="startGroupCall()">📞 Group Call</button>
+            `;
+        }
     }
 
     function renderMemberTags() {
@@ -1551,7 +2446,7 @@
         }
     }
 
-    // ==================== MESSAGE FUNCTIONS (WITH CURSOR PAGINATION) ====================
+    // ==================== MESSAGE FUNCTIONS ====================
     async function loadMessages(conversationId, type = 'dm') {
         try {
             let endpoint;
@@ -1627,7 +2522,7 @@
                 state.groupMessages.set(conversationId, updatedData);
             }
 
-            renderMessages(true); // Preserve scroll
+            renderMessages(true);
         } catch (error) {
             console.error('Error loading more messages:', error);
             showToast('Error', 'Failed to load more messages');
@@ -1661,7 +2556,6 @@
             messageData = { messages: [], cursor: null, hasMore: false };
         }
 
-        // Add "Load More" button at top if there are more messages
         if (messageData.hasMore) {
             const loadMoreBtn = document.createElement('button');
             loadMoreBtn.className = 'load-more-btn';
@@ -1750,6 +2644,101 @@
         }
     }
 
+    // ==================== TYPING INDICATOR ====================
+    function startTypingIndicator() {
+        if (!state.currentConversation && !state.currentGroup) return;
+
+        sendTypingIndicator(true);
+
+        if (state.typingTimeouts.has('typing')) {
+            clearTimeout(state.typingTimeouts.get('typing'));
+        }
+
+        const timeoutId = setTimeout(() => {
+            sendTypingIndicator(false);
+            state.typingTimeouts.delete('typing');
+        }, 3000);
+
+        state.typingTimeouts.set('typing', timeoutId);
+    }
+
+    function sendTypingIndicator(isTyping) {
+        if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+
+        let typingData;
+
+        if (state.currentConversation) {
+            typingData = {
+                conversationId: state.currentConversation.id,
+                conversationType: 'dm',
+                userId: state.user.id,
+                userName: state.user.displayName,
+                isTyping: isTyping
+            };
+        } else if (state.currentGroup) {
+            typingData = {
+                conversationId: state.currentGroup.id,
+                conversationType: 'group',
+                userId: state.user.id,
+                userName: state.user.displayName,
+                isTyping: isTyping
+            };
+        } else {
+            return;
+        }
+
+        const message = {
+            type: 'typing_indicator',
+            data: typingData
+        };
+
+        state.ws.send(JSON.stringify(message));
+    }
+
+    function showTypingIndicator(userName, isTyping) {
+        const existingIndicator = document.getElementById('typing-indicator');
+        if (existingIndicator) {
+            existingIndicator.remove();
+        }
+
+        if (isTyping) {
+            const indicator = document.createElement('div');
+            indicator.id = 'typing-indicator';
+            indicator.style.cssText = 'padding: 8px 16px; font-size: 12px; color: #95a5a6; display: flex; align-items: center; gap: 8px;';
+            indicator.innerHTML = `
+                <div style="display: flex; gap: 4px;">
+                    <div style="width: 6px; height: 6px; background: #667eea; border-radius: 50%; animation: typing 1.4s infinite;"></div>
+                    <div style="width: 6px; height: 6px; background: #667eea; border-radius: 50%; animation: typing 1.4s infinite 0.2s;"></div>
+                    <div style="width: 6px; height: 6px; background: #667eea; border-radius: 50%; animation: typing 1.4s infinite 0.4s;"></div>
+                </div>
+                <span>${escapeHtml(userName)} is typing...</span>
+            `;
+
+            const messagesContainer = document.getElementById('messagesContainer');
+            messagesContainer.appendChild(indicator);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            if (!document.querySelector('#typing-animation')) {
+                const style = document.createElement('style');
+                style.id = 'typing-animation';
+                style.textContent = `
+                    @keyframes typing {
+                        0%, 60%, 100% { transform: translateY(0); }
+                        30% { transform: translateY(-6px); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            setTimeout(() => {
+                const currentIndicator = document.getElementById('typing-indicator');
+                if (currentIndicator) {
+                    currentIndicator.remove();
+                }
+            }, 3000);
+        }
+    }
+
     // ==================== GROUP FUNCTIONS ====================
     function showCreateGroupModal() {
         document.getElementById('createGroupModal').classList.add('active');
@@ -1812,7 +2801,6 @@
 
             showToast('Success', `Group "${name}" is being created...`);
 
-            // Refresh groups after a short delay
             setTimeout(() => refreshGroups(), 2000);
         } catch (error) {
             console.error('Error creating group:', error);
@@ -1867,10 +2855,9 @@
         document.getElementById('groupMembersModal').classList.remove('active');
     }
 
-    // ==================== WEBSOCKET (SECURE TOKEN IN SUBPROTOCOL) ====================
+    // ==================== WEBSOCKET ====================
     async function connectWebSocket() {
         return new Promise((resolve, reject) => {
-            // IMPORTANT: Pass token as subprotocol (Sec-WebSocket-Protocol header)
             state.ws = new WebSocket(`${WS_BASE}/ws`, [state.token]);
 
             state.ws.onopen = () => {
@@ -1925,6 +2912,12 @@
                 case WS_MESSAGE_TYPES.TYPING_INDICATOR:
                     handleTypingIndicator(JSON.parse(message.data));
                     break;
+                case WS_MESSAGE_TYPES.CALL_INVITATION:
+                    handleCallInvitation(JSON.parse(message.data));
+                    break;
+                case WS_MESSAGE_TYPES.CALL_STATUS:
+                    handleCallStatusUpdate(JSON.parse(message.data));
+                    break;
             }
         } catch (error) {
             console.error('Error handling WebSocket message:', error);
@@ -1943,50 +2936,6 @@
         if (!isCurrentConversation || data.userId === state.user.id) return;
 
         showTypingIndicator(data.userName, data.isTyping);
-    }
-
-    function showTypingIndicator(userName, isTyping) {
-        const existingIndicator = document.getElementById('typing-indicator');
-        if (existingIndicator) {
-            existingIndicator.remove();
-        }
-
-        if (isTyping) {
-            const indicator = document.createElement('div');
-            indicator.id = 'typing-indicator';
-            indicator.style.cssText = 'padding: 8px 16px; font-size: 12px; color: #95a5a6; display: flex; align-items: center; gap: 8px;';
-            indicator.innerHTML = `
-                <div style="display: flex; gap: 4px;">
-                    <div style="width: 6px; height: 6px; background: #667eea; border-radius: 50%; animation: typing 1.4s infinite;"></div>
-                    <div style="width: 6px; height: 6px; background: #667eea; border-radius: 50%; animation: typing 1.4s infinite 0.2s;"></div>
-                    <div style="width: 6px; height: 6px; background: #667eea; border-radius: 50%; animation: typing 1.4s infinite 0.4s;"></div>
-                </div>
-                <span>${escapeHtml(userName)} is typing...</span>
-            `;
-
-            const messagesContainer = document.getElementById('messagesContainer');
-            messagesContainer.appendChild(indicator);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-
-            if (!document.querySelector('#typing-animation')) {
-                const style = document.createElement('style');
-                style.id = 'typing-animation';
-                style.textContent = `
-                    @keyframes typing {
-                        0%, 60%, 100% { transform: translateY(0); }
-                        30% { transform: translateY(-6px); }
-                    }
-                `;
-                document.head.appendChild(style);
-            }
-
-            setTimeout(() => {
-                const currentIndicator = document.getElementById('typing-indicator');
-                if (currentIndicator) {
-                    currentIndicator.remove();
-                }
-            }, 3000);
-        }
     }
 
     function handleNewMessage(data) {
@@ -2150,7 +3099,7 @@
         return toast;
     }
 
-    // Add typing indicator to message input
+    // ==================== EVENT LISTENERS ====================
     setTimeout(() => {
         const messageInput = document.getElementById('messageInput');
         if (messageInput) {

@@ -614,7 +614,7 @@ class CallService(
             canSubscribe = true
         )
 
-        val liveKitUrl = System.getenv("LIVEKIT_URL") ?: "ws://localhost:7880"
+        val liveKitUrl = System.getenv("LIVEKIT_PUBLIC_URL") ?: "ws://127.0.0.1:7880"
 
         return CallTokenResponse(
             callId = call.id,
@@ -777,7 +777,7 @@ class CallService(
  * Wrapper around LiveKit server SDK for room and token management
  */
 class LiveKitService {
-    private val apiUrl: String = System.getenv("LIVEKIT_URL") ?: "http://localhost:7880"
+    private val apiUrl: String = System.getenv("LIVEKIT_URL") ?: "http://127.0.0.1:7880"
     private val apiKey: String = System.getenv("LIVEKIT_API_KEY") ?: "devkey"
     private val apiSecret: String = System.getenv("LIVEKIT_API_SECRET") ?: "secret"
 

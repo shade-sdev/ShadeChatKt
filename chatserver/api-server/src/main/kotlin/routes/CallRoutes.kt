@@ -43,10 +43,10 @@ fun Route.callRoutes(callService: CallService) {
 
                     call.respond(HttpStatusCode.Created, callResponse)
                 } catch (e: IllegalArgumentException) {
-                    log().warn { "Bad request for call initiation: ${e.message}" }
+                    log().error(e) { "Bad request for call initiation: ${e.message}" }
                     call.respond(HttpStatusCode.BadRequest, ErrorResponse(e.message ?: "Invalid request"))
                 } catch (e: IllegalStateException) {
-                    log().warn { "Call already in progress: ${e.message}" }
+                    log().error(e) { "Call already in progress: ${e.message}" }
                     call.respond(HttpStatusCode.Conflict, ErrorResponse(e.message ?: "Call already in progress"))
                 } catch (e: Exception) {
                     log().error(e) { "Error initiating call" }
